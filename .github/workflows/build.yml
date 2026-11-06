@@ -1,0 +1,34 @@
+name: Build QGIS Plugin ZIP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Python syntax
+        run: python -m compileall -q .
+
+      - name: Package plugin
+        run: |
+          mkdir -p package/OrganizeFilesIntoGroups
+          cp __init__.py metadata.txt icon.svg organize_hub_box.py organize_dialog.py organize_processor.py README.md package/OrganizeFilesIntoGroups/
+          cd package
+          zip -r ../OrganizeFilesIntoGroupsQGIS.zip OrganizeFilesIntoGroups
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrganizeFilesIntoGroupsQGIS
+          path: OrganizeFilesIntoGroupsQGIS.zip
+          if-no-files-found: error
+          retention-days: 30
