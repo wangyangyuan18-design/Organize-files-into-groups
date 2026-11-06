@@ -211,6 +211,12 @@ def _write_subset(source_layer, features, output_path, driver, extension):
     style = QgsMapLayerStyle()
     style.readFromLayer(source_layer)
     style.writeToLayer(output_layer)
+    try:
+        # Write a sidecar QML so the same renderer/categories and labels are
+        # available after the project is closed and the exported data is reloaded.
+        output_layer.saveNamedStyle(output_path + ".qml")
+    except Exception:
+        pass
 
     # Layer-level presentation and form settings are not all part of the
     # renderer itself, so copy the common settings explicitly as well.
@@ -302,102 +308,84 @@ def _spatially_select_home_features(boundary_layer, boundary_features, home_laye
     return selected
 
 
-def _tree_layer_order(root):
-    """Return a depth-first ordering of source layer IDs in the layer tree."""
-    order = {}
-    counter = [0]
-
-    def visit(node):
-        for child in node.children():
-            if hasattr(child, "layerId"):
-                order.setdefault(child.layerId(), counter[0])
-                counter[0] += 1
-            else:
-                visit(child)
-
-    visit(root)
-    return order
-
-
-def _node_visibility(project, source_layer):
-    node = project.layerTreeRoot().findLayer(source_layer.id())
-    if node is None:
-        return True
-    return node.itemVisibilityChecked()
-
-
-def _clone_homes_group(source_root, target_group, output_by_key, source_by_key):
-    """Copy the HOMES PASS layer-tree hierarchy where it exists in the project."""
-    wanted_ids = {
-        layer.id()
+def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_by_key):
+    """Clone only selected layers while retaining their original group paths/order."""
+    key_by_layer_id = {
+        layer.id(): key
         for key, layer in source_by_key.items()
-        if key in HOME_KEYS and layer
+        if layer is not None and output_by_key.get(key) is not None
     }
+    selected_ids = set(key_by_layer_id)
     added_ids = set()
 
-    def contains_wanted(node):
+    def contains_selected(node):
         for child in node.children():
-            if hasattr(child, "layerId") and child.layerId() in wanted_ids:
-                return True
-            if not hasattr(child, "layerId") and contains_wanted(child):
+            if hasattr(child, "layerId"):
+                if child.layerId() in selected_ids:
+                    return True
+            elif contains_selected(child):
                 return True
         return False
 
-    def copy_children(source_node, dest_group):
-        for child in source_node.children():
+    def direct_homes_group(parent_group):
+        for child in parent_group.children():
+            if (
+                not hasattr(child, "layerId")
+                and child.name().strip().casefold() == "homes pass"
+            ):
+                return child
+        return parent_group.addGroup("HOMES PASS")
+
+    def copy_children(source_group, destination_group, inside_homes=False):
+        for child in source_group.children():
             if hasattr(child, "layerId"):
                 source_id = child.layerId()
-                for key, source_layer in source_by_key.items():
-                    if key in HOME_KEYS and source_layer and source_layer.id() == source_id:
-                        output_layer = output_by_key.get(key)
-                        if output_layer:
-                            new_node = dest_group.addLayer(output_layer)
-                            new_node.setItemVisibilityChecked(child.itemVisibilityChecked())
-                            added_ids.add(source_id)
-                        break
-            else:
-                if not contains_wanted(child):
+                key = key_by_layer_id.get(source_id)
+                if key is None or added_ids and source_id in added_ids:
                     continue
-                new_group = dest_group.addGroup(child.name())
-                new_group.setExpanded(child.isExpanded())
-                copy_children(child, new_group)
-                if not new_group.children():
-                    dest_group.removeChildNode(new_group)
+                output_layer = output_by_key.get(key)
+                if output_layer is None:
+                    continue
 
-    source_homes_group = None
+                if key in HOME_KEYS and not inside_homes:
+                    target_parent = direct_homes_group(destination_group)
+                else:
+                    target_parent = destination_group
+                new_node = target_parent.addLayer(output_layer)
+                new_node.setItemVisibilityChecked(child.itemVisibilityChecked())
+                new_node.setExpanded(child.isExpanded())
+                added_ids.add(source_id)
+                continue
 
-    def find_homes_group(node):
-        nonlocal source_homes_group
-        for child in node.children():
-            if not hasattr(child, "layerId"):
-                if (
-                    child.name().strip().casefold() == "homes pass"
-                    and contains_wanted(child)
-                ):
-                    source_homes_group = child
-                    return
-                find_homes_group(child)
-                if source_homes_group:
-                    return
+            if not contains_selected(child):
+                continue
+            new_group = destination_group.addGroup(child.name())
+            new_group.setExpanded(child.isExpanded())
+            child_is_homes = (
+                inside_homes or child.name().strip().casefold() == "homes pass"
+            )
+            copy_children(child, new_group, child_is_homes)
+            if not new_group.children():
+                destination_group.removeChildNode(new_group)
 
-    find_homes_group(source_root)
-    if source_homes_group is not None:
-        copy_children(source_homes_group, target_group)
+    copy_children(source_root, target_group, False)
 
-    # Add selected home layers not found under a source HOMES PASS group.
-    order = _tree_layer_order(source_root)
-    remaining = [
-        (key, layer)
-        for key, layer in source_by_key.items()
-        if key in HOME_KEYS
-        and layer
-        and layer.id() not in added_ids
-        and output_by_key.get(key)
-    ]
-    remaining.sort(key=lambda item: order.get(item[1].id(), 10**9))
-    for key, source_layer in remaining:
-        node = target_group.addLayer(output_by_key[key])
-        node.setItemVisibilityChecked(_node_visibility(QgsProject.instance(), source_layer))
+    # If a selected project layer was not present in the layer tree, append it
+    # without dropping its exported dataset. Home categories remain under HOMES PASS.
+    for key in CORE_KEYS:
+        source_layer = source_by_key.get(key)
+        output_layer = output_by_key.get(key)
+        if source_layer and output_layer and source_layer.id() not in added_ids:
+            target_group.addLayer(output_layer)
+            added_ids.add(source_layer.id())
+
+    for key in HOME_KEYS:
+        source_layer = source_by_key.get(key)
+        output_layer = output_by_key.get(key)
+        if source_layer and output_layer and source_layer.id() not in added_ids:
+            homes_group = direct_homes_group(target_group)
+            homes_group.addLayer(output_layer)
+            added_ids.add(source_layer.id())
 
 
 def _create_project_group(project, hub_name, source_by_key, output_by_key):
@@ -411,43 +399,8 @@ def _create_project_group(project, hub_name, source_by_key, output_by_key):
 
     hub_group = root.addGroup(group_name)
     hub_group.setExpanded(False)
-
-    order = _tree_layer_order(root)
-    core_items = [
-        (key, source_by_key.get(key))
-        for key in CORE_KEYS
-        if source_by_key.get(key) and output_by_key.get(key)
-    ]
-    core_items.sort(key=lambda item: order.get(item[1].id(), 10**9))
-
-    home_sources = [
-        source_by_key.get(key) for key in HOME_KEYS if source_by_key.get(key)
-    ]
-    home_first_order = min(
-        [order.get(layer.id(), 10**9) for layer in home_sources] or [10**9]
-    )
-    home_group_added = False
-
-    def add_homes():
-        nonlocal home_group_added
-        if home_group_added or not any(output_by_key.get(key) for key in HOME_KEYS):
-            return
-        homes_group = hub_group.addGroup("HOMES PASS")
-        homes_group.setExpanded(False)
-        _clone_homes_group(root, homes_group, output_by_key, source_by_key)
-        home_group_added = True
-
-    for key, source_layer in core_items:
-        if (
-            not home_group_added
-            and home_first_order < order.get(source_layer.id(), 10**9)
-        ):
-            add_homes()
-        node = hub_group.addLayer(output_by_key[key])
-        node.setItemVisibilityChecked(_node_visibility(project, source_layer))
-    add_homes()
+    _copy_selected_layer_tree(root, hub_group, source_by_key, output_by_key)
     return hub_group
-
 
 class HubBoxOrganizer:
     """Run the complete per-HUB-BOX export workflow."""
