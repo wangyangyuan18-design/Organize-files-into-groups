@@ -211,12 +211,6 @@ def _write_subset(source_layer, features, output_path, driver, extension):
     style = QgsMapLayerStyle()
     style.readFromLayer(source_layer)
     style.writeToLayer(output_layer)
-    try:
-        # Write a sidecar QML so the same renderer/categories and labels are
-        # available after the project is closed and the exported data is reloaded.
-        output_layer.saveNamedStyle(output_path + ".qml")
-    except Exception:
-        pass
 
     # Layer-level presentation and form settings are not all part of the
     # renderer itself, so copy the common settings explicitly as well.
@@ -236,6 +230,12 @@ def _write_subset(source_layer, features, output_path, driver, extension):
     except Exception:
         # Styling has already been copied; an unsupported auxiliary property
         # should not invalidate a correctly written dataset.
+        pass
+
+    try:
+        # Persist the copied layer style in a QML sidecar next to the dataset.
+        output_layer.saveNamedStyle(output_path + ".qml")
+    except Exception:
         pass
 
     output_layer.setName(source_layer.name())
@@ -341,7 +341,7 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
             if hasattr(child, "layerId"):
                 source_id = child.layerId()
                 key = key_by_layer_id.get(source_id)
-                if key is None or added_ids and source_id in added_ids:
+                if key is None or source_id in added_ids:
                     continue
                 output_layer = output_by_key.get(key)
                 if output_layer is None:
@@ -430,6 +430,10 @@ class HubBoxOrganizer:
             layer = self.selected_layers.get(key)
             if layer and not layer.isValid():
                 raise OrganizerError("选择的图层无效：{}。".format(LAYER_LABELS[key]))
+            if layer is None:
+                self.errors.append(
+                    "未选择源图层：{}（该类别不会生成输出文件）".format(LAYER_LABELS[key])
+                )
 
         # Validate that all selected datasets can be represented as SHP/GPKG.
         format_by_key = {}
