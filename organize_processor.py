@@ -327,6 +327,30 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
                 return True
         return False
 
+    def selected_ids_in_subtree(node):
+        found = set()
+        for child in node.children():
+            if hasattr(child, "layerId"):
+                if child.layerId() in selected_ids:
+                    found.add(child.layerId())
+            else:
+                found.update(selected_ids_in_subtree(child))
+        return found
+
+    def deepest_common_container(node):
+        """
+        Find the deepest source group containing every selected source layer.
+        Its own name is intentionally not copied; only its children are copied
+        into the new HUB BOX group. This removes project/file wrapper groups
+        such as 'Kiwologoma 02=2418 HP' and the source 'HUB BOX' container.
+        """
+        for child in node.children():
+            if hasattr(child, "layerId"):
+                continue
+            if selected_ids.issubset(selected_ids_in_subtree(child)):
+                return deepest_common_container(child)
+        return node
+
     def direct_homes_group(parent_group):
         for child in parent_group.children():
             if (
@@ -368,7 +392,13 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
             if not new_group.children():
                 destination_group.removeChildNode(new_group)
 
-    copy_children(source_root, target_group, False)
+    # Flatten only the common outer source group. In a typical project the
+    # selected ODN layers all live below:
+    #   project/file group -> HUB BOX group -> (layers + HOMES PASS)
+    # Starting from the deepest common container removes both outer wrappers,
+    # while preserving HOMES PASS and any category subgroups below it.
+    source_container = deepest_common_container(source_root)
+    copy_children(source_container, target_group, False)
 
     # If a selected project layer was not present in the layer tree, append it
     # without dropping its exported dataset. Home categories remain under HOMES PASS.
