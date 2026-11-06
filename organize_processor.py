@@ -337,6 +337,8 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
                 found.update(selected_ids_in_subtree(child))
         return found
 
+    tree_selected_ids = selected_ids_in_subtree(source_root)
+
     def deepest_common_container(node):
         """
         Find the deepest source group containing every selected source layer.
@@ -344,10 +346,12 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
         into the new HUB BOX group. This removes project/file wrapper groups
         such as 'Kiwologoma 02=2418 HP' and the source 'HUB BOX' container.
         """
+        if not tree_selected_ids:
+            return node
         for child in node.children():
             if hasattr(child, "layerId"):
                 continue
-            if selected_ids.issubset(selected_ids_in_subtree(child)):
+            if tree_selected_ids.issubset(selected_ids_in_subtree(child)):
                 return deepest_common_container(child)
         return node
 
