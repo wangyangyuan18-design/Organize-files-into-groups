@@ -8,7 +8,7 @@
 - `HUB BOX Boundary`、`SUB BOX`、`SUB BOX Boundary`、`Distribution Cable`：按各图层 `Name` 字段是否包含当前 HUB BOX 的 `Name` 值筛选，忽略大小写。
 - `Sdus`、`Mdus`、`Church`、`Commercial`、`Hospitals`、`Institution`：按当前 HUB BOX 对应的 `HUB BOX Boundary` 多边形进行空间筛选。点落在多边形内部或边界线上均纳入。
 - 每个 HUB BOX 输出到一个独立子文件夹；输出格式跟随对应源图层，支持 SHP 和 GPKG。
-- 保留源图层字段和 QGIS 图层样式（渲染器/分类、标注等）。筛选结果为 0 时仍然输出空图层。
+- 保留源图层字段和 QGIS 图层样式（渲染器/分类、标注等），并为输出数据写入 `.qml` 样式侧车文件。筛选结果为 0 时仍然输出空图层。
 - 可将结果加载回当前工程，并按 HUB BOX 建立图层组；`HOMES PASS` 内优先沿用原工程中该组的子组结构和图层顺序。
 - 输出 `HUB_BOX_group_report.txt`，记录每个 HUB BOX 各图层的要素数量和错误信息。
 
@@ -26,6 +26,7 @@
 SourceFolder/
 ├─ KIM-HB10/
 │  ├─ HUB BOX.shp
+│  ├─ HUB BOX.shp.qml
 │  ├─ HUB BOX Boundary.shp
 │  ├─ SUB BOX.shp
 │  ├─ SUB BOX Boundary.shp
