@@ -611,6 +611,10 @@ class HubBoxOrganizer:
                                 hub_name, LAYER_LABELS[key], len(features), output_path
                             )
                         )
+                        if key not in HOME_KEYS:
+                            self.report_lines.append(
+                                "  {}={}".format(LAYER_LABELS[key], len(features))
+                            )
                         if key == "sub_box":
                             type_counts = _summarize_sub_box_types(source_layer, features)
                             if type_counts is None:
@@ -620,7 +624,7 @@ class HubBoxOrganizer:
                             else:
                                 for type_name in sorted(type_counts):
                                     self.report_lines.append(
-                                        "  SUB BOX ({})=({})".format(
+                                        "  SUB BOX({})={}".format(
                                             type_name, type_counts[type_name]
                                         )
                                     )
@@ -632,7 +636,7 @@ class HubBoxOrganizer:
                                 )
                             else:
                                 self.report_lines.append(
-                                    "  {}={} UNITS（有效值 {}，空值/非数字 {}）".format(
+                                    "  {}={}（UNITS，有效值 {}，空值/非数字 {}）".format(
                                         LAYER_LABELS[key], units["total"],
                                         units["valid"], units["invalid"]
                                     )
