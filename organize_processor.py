@@ -507,6 +507,16 @@ class HubBoxOrganizer:
                 raise OrganizerError("无法创建输出目录：{}".format(exc))
 
         hubs = _collect_hub_features(hub_layer)
+        # Sort HUB BOX names naturally so numeric suffixes are ordered as
+        # HB01, HB02, ... HB09, HB10 (rather than lexicographically).
+        def natural_hub_sort_key(item):
+            name = str(item[1]).strip().casefold()
+            return tuple(
+                (1, int(part)) if part.isdigit() else (0, part)
+                for part in re.split(r"(\d+)", name)
+            )
+
+        hubs.sort(key=natural_hub_sort_key)
         for key in ALL_KEYS:
             layer = self.selected_layers.get(key)
             if layer and not layer.isValid():
