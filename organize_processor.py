@@ -436,7 +436,7 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
     # Starting from the deepest common container removes both outer wrappers,
     # while preserving HOMES PASS and any category subgroups below it.
     source_container = deepest_common_container(source_root)
-    copy_children(source_container, target_group, False)
+    copy_children(source_container, target_group)
 
     # If a selected project layer was not present in the layer tree, append it
     # without dropping its exported dataset. Home categories remain under HOMES PASS.
