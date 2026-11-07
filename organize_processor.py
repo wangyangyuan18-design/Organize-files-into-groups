@@ -112,6 +112,53 @@ def _collect_hub_features(layer):
     return result
 
 
+def _summarize_sub_box_types(layer, features):
+    """Return per-Type feature counts for the SUB BOX validation report."""
+    type_field = next(
+        (field.name() for field in layer.fields() if field.name().casefold() == "type"),
+        None,
+    )
+    if not type_field:
+        return None
+    counts = defaultdict(int)
+    for feature in features:
+        value = feature[type_field]
+        label = "(空值)" if value is None or str(value).strip() == "" else str(value).strip()
+        counts[label] += 1
+    return dict(counts)
+
+
+def _summarize_units(layer, features):
+    """Sum UNITS and report invalid/missing values without silently counting them."""
+    units_field = next(
+        (field.name() for field in layer.fields() if field.name().casefold() == "units"),
+        None,
+    )
+    if not units_field:
+        return None
+    total = 0.0
+    valid = 0
+    invalid = 0
+    for feature in features:
+        value = feature[units_field]
+        if value is None or str(value).strip() == "":
+            invalid += 1
+            continue
+        try:
+            number = float(value)
+            if not __import__("math").isfinite(number):
+                raise ValueError("non-finite")
+            total += number
+            valid += 1
+        except (TypeError, ValueError):
+            invalid += 1
+    if abs(total - round(total)) < 1e-9:
+        display = str(int(round(total)))
+    else:
+        display = ("{:.6f}".format(total)).rstrip("0").rstrip(".")
+    return {"total": display, "valid": valid, "invalid": invalid}
+
+
 def _format_for_layer(layer):
     path = source_file_path(layer)
     extension = os.path.splitext(path)[1].lower()
@@ -564,6 +611,32 @@ class HubBoxOrganizer:
                                 hub_name, LAYER_LABELS[key], len(features), output_path
                             )
                         )
+                        if key == "sub_box":
+                            type_counts = _summarize_sub_box_types(source_layer, features)
+                            if type_counts is None:
+                                self.report_lines.append(
+                                    "  ODN统计校验：缺少 Type 字段，无法按 SUB BOX 类型统计"
+                                )
+                            else:
+                                for type_name in sorted(type_counts):
+                                    self.report_lines.append(
+                                        "  SUB BOX ({})=({})".format(
+                                            type_name, type_counts[type_name]
+                                        )
+                                    )
+                        elif key in HOME_KEYS:
+                            units = _summarize_units(source_layer, features)
+                            if units is None:
+                                self.report_lines.append(
+                                    "  ODN统计校验：缺少 UNITS 字段，无法汇总"
+                                )
+                            else:
+                                self.report_lines.append(
+                                    "  {}={} UNITS（有效值 {}，空值/非数字 {}）".format(
+                                        LAYER_LABELS[key], units["total"],
+                                        units["valid"], units["invalid"]
+                                    )
+                                )
                     except Exception as exc:
                         message = "{} / {}：{}".format(
                             hub_name, LAYER_LABELS[key], exc
