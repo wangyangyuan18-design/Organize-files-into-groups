@@ -402,16 +402,7 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
                 return deepest_common_container(child)
         return node
 
-    def direct_homes_group(parent_group):
-        for child in parent_group.children():
-            if (
-                not hasattr(child, "layerId")
-                and child.name().strip().casefold() == "homes pass"
-            ):
-                return child
-        return parent_group.addGroup("HOMES PASS")
-
-    def copy_children(source_group, destination_group, inside_homes=False):
+    def copy_children(source_group, destination_group):
         for child in source_group.children():
             if hasattr(child, "layerId"):
                 source_id = child.layerId()
@@ -422,11 +413,10 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
                 if output_layer is None:
                     continue
 
-                if key in HOME_KEYS and not inside_homes:
-                    target_parent = direct_homes_group(destination_group)
-                else:
-                    target_parent = destination_group
-                new_node = target_parent.addLayer(output_layer)
+                # Keep each home layer directly under the same parent group
+                # it had in the source project. Do not create a synthetic
+                # "HOMES PASS" group or add a duplicate nesting level.
+                new_node = destination_group.addLayer(output_layer)
                 new_node.setItemVisibilityChecked(child.itemVisibilityChecked())
                 new_node.setExpanded(child.isExpanded())
                 added_ids.add(source_id)
@@ -436,10 +426,7 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
                 continue
             new_group = destination_group.addGroup(child.name())
             new_group.setExpanded(child.isExpanded())
-            child_is_homes = (
-                inside_homes or child.name().strip().casefold() == "homes pass"
-            )
-            copy_children(child, new_group, child_is_homes)
+            copy_children(child, new_group)
             if not new_group.children():
                 destination_group.removeChildNode(new_group)
 
@@ -464,8 +451,9 @@ def _copy_selected_layer_tree(source_root, target_group, source_by_key, output_b
         source_layer = source_by_key.get(key)
         output_layer = output_by_key.get(key)
         if source_layer and output_layer and source_layer.id() not in added_ids:
-            homes_group = direct_homes_group(target_group)
-            homes_group.addLayer(output_layer)
+            # If the source layer is absent from the layer tree, do not
+            # invent a HOMES PASS wrapper; append it to the HUB group.
+            target_group.addLayer(output_layer)
             added_ids.add(source_layer.id())
 
 
